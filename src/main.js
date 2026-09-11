@@ -1,3 +1,12 @@
+import {
+  createOperationalViewport,
+  VIEW_MODES,
+  WORKSPACES,
+} from './operationalViewport.js';
+import {
+  installScopeMask,
+  setScopeMaskEnabled,
+} from './scopeMask.js';
 import * as Cesium from 'cesium';
 import { StyleManager } from './ui.js';
 import { flyToAustin } from './camera.js';
