@@ -324,13 +324,12 @@ export function getRegisteredTransitFeed(id) {
  * @returns {number}
  */
 export function haversineKm(aLat, aLon, bLat, bLon) {
-  const toRad = (deg) => (deg * Math.PI) / 180;
-  const dLat = toRad(bLat - aLat);
-  const dLon = toRad(bLon - aLon);
-  const h =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLon / 2) ** 2;
-  return 2 * 6371 * Math.asin(Math.min(1, Math.sqrt(h)));
+  return (
+    greatCircleMeters(
+      { lat: aLat, lon: aLon },
+      { lat: bLat, lon: bLon },
+    ) / 1000
+  );
 }
 
 /**
