@@ -25,7 +25,7 @@
  * Pure data + pure helpers: imported by the browser layer, the Vite proxy, and
  * node:test. No Cesium, no Node built-ins.
  */
-
+import { greatCircleMeters, queryRadius } from '../spatialQuery.js';
 /** Transit modes the layer colors. `routeMode` hints refine a feed's default. */
 export const TRANSIT_MODES = Object.freeze([
   'bus',
