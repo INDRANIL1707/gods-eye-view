@@ -341,14 +341,35 @@ export function haversineKm(aLat, aLon, bLat, bLon) {
  * @returns {object[]}
  */
 export function transitFeedsInRange(lat, lon, slackKm = 0) {
-  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return [];
-  return TRANSIT_ENABLED_FEEDS.map((feed) => ({
-    feed,
-    km: haversineKm(lat, lon, feed.center.lat, feed.center.lon),
-  }))
-    .filter(({ feed, km }) => km <= feed.loadRadiusKm + Math.max(0, slackKm))
-    .sort((a, b) => a.km - b.km)
-    .map(({ feed }) => feed);
+  if (
+    !Number.isFinite(lat) ||
+    !Number.isFinite(lon) ||
+    lat < -90 ||
+    lat > 90 ||
+    lon < -180 ||
+    lon > 180
+  ) {
+    return [];
+  }
+
+  const slack = Math.max(0, slackKm);
+  const maxRadiusKm = TRANSIT_ENABLED_FEEDS.reduce(
+    (max, feed) => Math.max(max, feed.loadRadiusKm),
+    0,
+  );
+  const candidates = queryRadius(
+    TRANSIT_ENABLED_FEEDS,
+    { lat, lon },
+    (maxRadiusKm + slack) * 1000,
+    (feed) => feed.center,
+  );
+
+  return candidates
+    .filter(
+      ({ entity: feed, distanceM }) =>
+        distanceM <= (feed.loadRadiusKm + slack) * 1000,
+    )
+    .map(({ entity: feed }) => feed);
 }
 
 /**
