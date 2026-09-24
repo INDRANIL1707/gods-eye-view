@@ -8,6 +8,76 @@ import {
 } from './spatialQuery.js';
 
 const ORIGIN = { lat: 0, lon: 0 };
+test('greatCircleMeters calibrates one degree of latitude', () => {
+  const distanceM = greatCircleMeters(
+    { lat: 0, lon: 0 },
+    { lat: 1, lon: 0 },
+  );
+
+  assert.ok(
+    Math.abs(distanceM - 111_195) < 100,
+    `1° latitude ≈ 111.195 km, got ${distanceM}`,
+  );
+});
+
+test('greatCircleMeters handles antipodal points', () => {
+  const distanceM = greatCircleMeters(
+    { lat: 0, lon: 0 },
+    { lat: 0, lon: 180 },
+  );
+
+  assert.ok(
+    Math.abs(distanceM - Math.PI * 6_371_000) < 1,
+    `antipodal distance ≈ πR, got ${distanceM}`,
+  );
+});
+
+test('greatCircleMeters accepts lon and lng coordinate spellings', () => {
+  const lonDistance = greatCircleMeters(
+    { lat: 0, lon: 0 },
+    { lat: 1, lon: 0 },
+  );
+  const lngDistance = greatCircleMeters(
+    { lat: 0, lon: 0 },
+    { lat: 1, lng: 0 },
+  );
+
+  assert.equal(lngDistance, lonDistance);
+});
+
+test('queryRadius honors a zero-radius exact match', () => {
+  const result = queryRadius(
+    [
+      { id: 'same', position: ORIGIN },
+      { id: 'other', position: { lat: 0, lon: 0.0001 } },
+    ],
+    ORIGIN,
+    0,
+    (entity) => entity.position,
+  );
+
+  assert.deepEqual(
+    result.map((item) => item.entity.id),
+    ['same'],
+  );
+});
+
+test('queryRadius includes the exact great-circle radius boundary', () => {
+  const boundary = { lat: 1, lon: 0 };
+  const radiusM = greatCircleMeters(ORIGIN, boundary);
+
+  const result = queryRadius(
+    [{ id: 'boundary', position: boundary }],
+    ORIGIN,
+    radiusM,
+    (entity) => entity.position,
+  );
+
+  assert.deepEqual(
+    result.map((item) => item.entity.id),
+    ['boundary'],
+  );
+});
 
 test('queryRadius returns coincident points at zero distance', () => {
   const result = queryRadius(
