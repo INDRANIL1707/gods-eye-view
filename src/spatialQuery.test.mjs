@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  greatCircleMeters,
   queryRadius,
   nearest,
 } from './spatialQuery.js';
