@@ -18,8 +18,8 @@
 
 import { loadBundledJson } from './bundledJson.js';
 import { createRetryableLoader } from './retryableLoad.js';
+import { EARTH_RADIUS_KM, greatCircleKm } from '../geoDistance.js';
 
-const EARTH_RADIUS_KM = 6371;
 const toRad = (d) => (d * Math.PI) / 180;
 
 /** Spherical-excess ring area (km²) — same family as turf/geojson-area. */
@@ -34,15 +34,6 @@ function ringAreaKm2(ring) {
       toRad(lon2 - lon1) * (2 + Math.sin(toRad(lat1)) + Math.sin(toRad(lat2)));
   }
   return Math.abs((sum * EARTH_RADIUS_KM * EARTH_RADIUS_KM) / 2);
-}
-
-function haversineKm(lon1, lat1, lon2, lat2) {
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
-  const h =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
-  return 2 * EARTH_RADIUS_KM * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
 /**
@@ -124,17 +115,9 @@ let _entries = null;
 const PACKS = {
   regions: {
     url: new URL('./local_data/natural_earth/regions.json', import.meta.url),
-    importJson: () =>
-      import('./local_data/natural_earth/regions.json', {
-        with: { type: 'json' },
-      }),
   },
   marine: {
     url: new URL('./local_data/natural_earth/marine.json', import.meta.url),
-    importJson: () =>
-      import('./local_data/natural_earth/marine.json', {
-        with: { type: 'json' },
-      }),
   },
 };
 
@@ -165,7 +148,10 @@ function buildEntries(pack, kind) {
       polygons,
       areaKm2,
       bbox: [minLon, minLat, maxLon, maxLat],
-      bboxDiagonalKm: haversineKm(minLon, minLat, maxLon, maxLat),
+      bboxDiagonalKm: greatCircleKm(
+        { lat: minLat, lon: minLon },
+        { lat: maxLat, lon: maxLon },
+      ),
     });
   }
   return out;
@@ -178,8 +164,8 @@ function buildEntries(pack, kind) {
  */
 const loadIndex = createRetryableLoader(async () => {
   const [regions, marine] = await Promise.all([
-    loadBundledJson(PACKS.regions.url, PACKS.regions.importJson),
-    loadBundledJson(PACKS.marine.url, PACKS.marine.importJson),
+    loadBundledJson(PACKS.regions.url),
+    loadBundledJson(PACKS.marine.url),
   ]);
   _entries = [
     ...buildEntries(regions, 'natural'),
@@ -324,4 +310,40 @@ export async function lookupNaturalRegionOutline(query, lat, lon) {
     }
   }
   return null;
+}
+
+/** Resolve the smallest containing bundled physical region without a network geocoder. */
+export async function naturalRegionAtPoint(latitude, longitude) {
+  if (
+    ![latitude, longitude].every(Number.isFinite) ||
+    Math.abs(latitude) > 90 ||
+    Math.abs(longitude) > 180
+  )
+    return null;
+  await loadIndex();
+  let best = null;
+  for (const entry of _entries) {
+    const [west, south, east, north] = entry.bbox;
+    if (
+      longitude < west ||
+      longitude > east ||
+      latitude < south ||
+      latitude > north
+    )
+      continue;
+    if (best && entry.areaKm2 >= best.areaKm2) continue;
+    if (entry.polygons.some((ring) => pointInRing(ring, latitude, longitude)))
+      best = entry;
+  }
+  return best
+    ? {
+        label: best.name,
+        locality: null,
+        region: best.name,
+        country: null,
+        countryCode: null,
+        source: 'Natural Earth',
+        kind: best.kind,
+      }
+    : null;
 }
