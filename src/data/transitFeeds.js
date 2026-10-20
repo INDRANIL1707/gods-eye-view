@@ -1,4 +1,6 @@
 import { greatCircleKm } from '../geoDistance.js';
+import { greatCircleKm } from '../geoDistance.js';
+import { queryRadius } from '../spatialQuery.js';
 
 /**
  * @module transitFeeds
@@ -27,7 +29,6 @@ import { greatCircleKm } from '../geoDistance.js';
  * Pure data + pure helpers: imported by the browser layer, the Vite proxy, and
  * node:test. No Cesium, no Node built-ins.
  */
-import { greatCircleMeters, queryRadius } from '../spatialQuery.js';
 /** Transit modes the layer colors. `routeMode` hints refine a feed's default. */
 export const TRANSIT_MODES = Object.freeze([
   'bus',
@@ -784,9 +785,11 @@ export function getRegisteredTransitFeed(id) {
  * @returns {number}
  */
 export function haversineKm(aLat, aLon, bLat, bLon) {
-  return greatCircleKm({ lat: aLat, lon: aLon }, { lat: bLat, lon: bLon });
+  return greatCircleKm(
+    { lat: aLat, lon: aLon },
+    { lat: bLat, lon: bLon },
+  );
 }
-
 /**
  * Feeds whose coverage circle contains the point, nearest first.
  * @param {number} lat
