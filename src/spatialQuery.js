@@ -1,32 +1,32 @@
 /**
- * Small, Cesium-free helpers for geographic spatial queries.
+ * Cesium-free spatial queries over geographic point collections.
  *
- * Coordinates are expressed as { lat, lon } (or { lat, lng }) in decimal degrees.
- * Consumers can adapt other entity shapes with the getPosition accessor.
+ * Great-circle distances are delegated to geoDistance.js so that all
+ * consumers share one Earth-radius convention and invalid-input contract.
  *
- * This module deliberately uses a linear scan. It is intended as the
- * correctness-first primitive; an indexed backend can replace the
- * scan later without changing the public query semantics.
+ * Coordinates use decimal degrees as { lat, lon } or { lat, lng }.
+ * Consumers can adapt other entity shapes with a position accessor.
+ *
+ * This implementation uses a linear scan. An indexed backend can replace
+ * the scan later without changing the public query semantics.
  */
 
-const EARTH_RADIUS_M = 6_371_000;
-const DEGREES_TO_RADIANS = Math.PI / 180;
+import { greatCircleMeters } from './geoDistance.js';
 
 function getLon(point) {
   return point.lon !== undefined ? point.lon : point.lng;
 }
 
 function isValidPoint(point) {
-  if (point == null || typeof point !== "object") {
-    return false;
-  }
-  const lat = point.lat;
+  if (point === null || typeof point !== 'object') return false;
+
   const lon = getLon(point);
+
   return (
-    Number.isFinite(lat) &&
+    Number.isFinite(point.lat) &&
+    point.lat >= -90 &&
+    point.lat <= 90 &&
     Number.isFinite(lon) &&
-    lat >= -90 &&
-    lat <= 90 &&
     lon >= -180 &&
     lon <= 180
   );
@@ -35,53 +35,21 @@ function isValidPoint(point) {
 function assertPoint(point, name) {
   if (!isValidPoint(point)) {
     throw new TypeError(
-      `${name} must be an object with finite lat/lon in valid geographic ranges`
+      `${name} must be an object with finite lat/lon in valid geographic ranges`,
     );
   }
 }
 
-/**
- * Internal great-circle distance calculation between two points.
- */
-function computeGreatCircleMeters(lat1, lon1, lat2, lon2) {
-  const lat1Rad = lat1 * DEGREES_TO_RADIANS;
-  const lat2Rad = lat2 * DEGREES_TO_RADIANS;
-  const deltaLat = (lat2 - lat1) * DEGREES_TO_RADIANS;
-  const deltaLon = (lon2 - lon1) * DEGREES_TO_RADIANS;
-
-  // Haversine form. Because longitude enters through sin(deltaLon / 2),
-  // crossing +/-180 degrees is handled naturally without explicit wrap logic.
-  const haversine =
-    Math.sin(deltaLat / 2) ** 2 +
-    Math.cos(lat1Rad) *
-      Math.cos(lat2Rad) *
-      Math.sin(deltaLon / 2) ** 2;
-
-  // Clamp floating-point round-off so 1 - h cannot become negative.
-  const h = Math.min(1, Math.max(0, haversine));
-
-  return EARTH_RADIUS_M * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+function toGeoPoint(point) {
+  return { lat: point.lat, lon: getLon(point) };
 }
 
 /**
- * Great-circle distance between two latitude/longitude points.
+ * Return entities within a great-circle radius, nearest first.
  *
- * @param {{lat: number, lon?: number, lng?: number}} a
- * @param {{lat: number, lon?: number, lng?: number}} b
- * @returns {number} distance in metres
- */
-export function greatCircleMeters(a, b) {
-  assertPoint(a, "point a");
-  assertPoint(b, "point b");
-
-  return computeGreatCircleMeters(a.lat, getLon(a), b.lat, getLon(b));
-}
-
-/**
- * Return all entities within a great-circle radius, nearest first.
- *
- * Invalid entity coordinates are ignored. Invalid center/radius/accessor
- * arguments are programmer errors and throw.
+ * Invalid entity positions are skipped. Invalid query arguments throw.
+ * Equal-distance results retain source order, and the input array is not
+ * modified.
  *
  * @template T
  * @param {T[]} entities
@@ -94,37 +62,34 @@ export function queryRadius(
   entities,
   center,
   radiusM,
-  getPosition = (entity) => entity
+  getPosition = (entity) => entity,
 ) {
   if (!Array.isArray(entities)) {
-    throw new TypeError("entities must be an array");
+    throw new TypeError('entities must be an array');
   }
-  assertPoint(center, "center");
+
+  assertPoint(center, 'center');
 
   if (!Number.isFinite(radiusM) || radiusM < 0) {
-    throw new RangeError("radiusM must be a finite non-negative number");
+    throw new RangeError('radiusM must be a finite non-negative number');
   }
 
-  if (typeof getPosition !== "function") {
-    throw new TypeError("getPosition must be a function");
+  if (typeof getPosition !== 'function') {
+    throw new TypeError('getPosition must be a function');
   }
 
-  const centerLon = getLon(center);
+  const canonicalCenter = toGeoPoint(center);
   const matches = [];
 
   for (let index = 0; index < entities.length; index += 1) {
     const entity = entities[index];
     const position = getPosition(entity, index);
 
-    if (!isValidPoint(position)) {
-      continue;
-    }
+    if (!isValidPoint(position)) continue;
 
-    const distanceM = computeGreatCircleMeters(
-      center.lat,
-      centerLon,
-      position.lat,
-      getLon(position)
+    const distanceM = greatCircleMeters(
+      canonicalCenter,
+      toGeoPoint(position),
     );
 
     if (distanceM <= radiusM) {
@@ -132,7 +97,7 @@ export function queryRadius(
     }
   }
 
-  // Stable sort preserves source order for equal distances without extra allocations.
+  // Stable sort preserves source order for equal-distance results.
   matches.sort((a, b) => a.distanceM - b.distanceM);
 
   return matches;
@@ -141,8 +106,8 @@ export function queryRadius(
 /**
  * Find the nearest entity to a geographic point.
  *
- * Invalid entity coordinates are ignored. Returns null when no entity has
- * a valid position. Equal-distance ties retain the original entity order.
+ * Invalid entity positions are skipped. Returns null when no entity has
+ * a valid position. Equal-distance ties retain source order.
  *
  * @template T
  * @param {T[]} entities
@@ -153,33 +118,30 @@ export function queryRadius(
 export function nearest(
   entities,
   point,
-  getPosition = (entity) => entity
+  getPosition = (entity) => entity,
 ) {
   if (!Array.isArray(entities)) {
-    throw new TypeError("entities must be an array");
-  }
-  assertPoint(point, "point");
-
-  if (typeof getPosition !== "function") {
-    throw new TypeError("getPosition must be a function");
+    throw new TypeError('entities must be an array');
   }
 
-  const pointLon = getLon(point);
+  assertPoint(point, 'point');
+
+  if (typeof getPosition !== 'function') {
+    throw new TypeError('getPosition must be a function');
+  }
+
+  const canonicalPoint = toGeoPoint(point);
   let best = null;
 
   for (let index = 0; index < entities.length; index += 1) {
     const entity = entities[index];
     const position = getPosition(entity, index);
 
-    if (!isValidPoint(position)) {
-      continue;
-    }
+    if (!isValidPoint(position)) continue;
 
-    const distanceM = computeGreatCircleMeters(
-      point.lat,
-      pointLon,
-      position.lat,
-      getLon(position)
+    const distanceM = greatCircleMeters(
+      canonicalPoint,
+      toGeoPoint(position),
     );
 
     if (best === null || distanceM < best.distanceM) {
