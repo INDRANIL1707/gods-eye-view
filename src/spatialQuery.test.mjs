@@ -1,11 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {
-  greatCircleMeters,
-  queryRadius,
-  nearest,
-} from './spatialQuery.js';
+import { greatCircleMeters } from './geoDistance.js';
+import { nearest, queryRadius } from './spatialQuery.js';
 
 const ORIGIN = { lat: 0, lon: 0 };
 test('greatCircleMeters calibrates one degree of latitude', () => {
