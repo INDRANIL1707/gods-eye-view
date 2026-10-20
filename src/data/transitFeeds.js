@@ -811,14 +811,26 @@ export function transitFeedsInRange(lat, lon, slackKm = 0) {
   }
 
   const slack = Math.max(0, slackKm);
+
+  // Preserve the old behavior for NaN slack: no feed matches.
+  if (Number.isNaN(slack)) return [];
+
   const maxRadiusKm = TRANSIT_ENABLED_FEEDS.reduce(
     (max, feed) => Math.max(max, feed.loadRadiusKm),
     0,
   );
+
+  const expandedRadiusM = (maxRadiusKm + slack) * 1000;
+
+  // Infinite slack should still return all feeds, nearest first.
+  const radiusM = Number.isFinite(expandedRadiusM)
+    ? expandedRadiusM
+    : Number.MAX_VALUE;
+
   const candidates = queryRadius(
     TRANSIT_ENABLED_FEEDS,
     { lat, lon },
-    (maxRadiusKm + slack) * 1000,
+    radiusM,
     (feed) => feed.center,
   );
 
